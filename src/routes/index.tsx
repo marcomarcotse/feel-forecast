@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation } from "@tanstack/react-query";
-import { observeMoodWeather, type MoodWeather } from "@/lib/mood.functions";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { observeMoodWeather, fetchMoodEntries } from "@/lib/mood.functions";
+import {
+  SENTIMENT_EMOJI,
+  sentimentToWeather,
+  type MoodEntry,
+  type MoodWeather,
+} from "@/lib/mood";
 import { WeatherScene } from "@/components/WeatherScene";
 import { CloudSun, History, LineChart as LineChartIcon, Sparkles } from "lucide-react";
 import {
@@ -30,103 +36,34 @@ export const Route = createFileRoute("/")({
 
 type View = "today" | "history" | "analytics";
 
-type LogEntry = {
-  id: string;
-  date: string;
-  diary: string;
-  weather: MoodWeather;
-  mood_label: string;
-  quote: string;
-};
-
-const MOCK_LOGS: LogEntry[] = [
-  {
-    id: "l1",
-    date: "May 30, 2026",
-    diary:
-      "Wrapped up the launch with the team and finally took a walk by the river. Everything felt aligned today.",
-    weather: "sunny",
-    mood_label: "Bright & Grateful",
-    quote:
-      "You showed up fully today, and the world answered back in warmth — let yourself feel it.",
-  },
-  {
-    id: "l2",
-    date: "May 29, 2026",
-    diary:
-      "Couldn't shake a heavy feeling all afternoon. Old memories surfaced and I just let them sit.",
-    weather: "rainy",
-    mood_label: "Quiet Melancholy",
-    quote:
-      "Tears are just the heart's way of making room — be tender with the version of you that's still healing.",
-  },
-  {
-    id: "l3",
-    date: "May 28, 2026",
-    diary:
-      "Unsure about the next quarter, lots of unknowns. Trying to sit with the ambiguity instead of forcing answers.",
-    weather: "cloudy",
-    mood_label: "Soft Uncertainty",
-    quote:
-      "Not every fog needs to lift before you take the next step — trust the path one quiet breath at a time.",
-  },
-  {
-    id: "l4",
-    date: "May 27, 2026",
-    diary:
-      "Long meditation this morning. Felt grounded, present, content with just being.",
-    weather: "calm",
-    mood_label: "Centered Peace",
-    quote:
-      "Stillness isn't empty — it's the quiet space where you remember who you really are.",
-  },
-];
-
-const SENTIMENT_SCORE: Record<MoodWeather, number> = {
-  sunny: 1,
-  rainbow: 0.8,
-  calm: 0.5,
-  cloudy: 0,
-  rainy: -0.5,
-  stormy: -1,
-};
-
-const TREND_DATA = [
-  { day: "Mon", score: 0.5, mood: "calm" },
-  { day: "Tue", score: 0, mood: "cloudy" },
-  { day: "Wed", score: -0.5, mood: "rainy" },
-  { day: "Thu", score: -1, mood: "stormy" },
-  { day: "Fri", score: 0, mood: "cloudy" },
-  { day: "Sat", score: 0.8, mood: "rainbow" },
-  { day: "Sun", score: 1, mood: "sunny" },
-];
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 function Index() {
   const [view, setView] = useState<View>("today");
   const [diary, setDiary] = useState("");
   const [weather, setWeather] = useState<MoodWeather | "idle">("idle");
-  const [logs, setLogs] = useState<LogEntry[]>(MOCK_LOGS);
   const observe = useServerFn(observeMoodWeather);
+  const fetchEntries = useServerFn(fetchMoodEntries);
+  const qc = useQueryClient();
+
+  const historyQuery = useQuery({
+    queryKey: ["mood-entries"],
+    queryFn: () => fetchEntries(),
+  });
 
   const mutation = useMutation({
     mutationFn: (text: string) => observe({ data: { diary: text } }),
-    onSuccess: (data) => {
-      setWeather(data.weather);
-      setLogs((prev) => [
-        {
-          id: `l-${Date.now()}`,
-          date: new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-          diary,
-          weather: data.weather,
-          mood_label: data.mood_label,
-          quote: data.quote,
-        },
-        ...prev,
-      ]);
+    onSuccess: (entry) => {
+      setWeather(sentimentToWeather(entry.sentiment));
+      qc.setQueryData<MoodEntry[]>(["mood-entries"], (prev) =>
+        prev ? [entry, ...prev] : [entry],
+      );
     },
   });
 
@@ -150,8 +87,16 @@ function Index() {
                 mutation={mutation}
               />
             )}
-            {view === "history" && <HistoryView logs={logs} isDark={isDark} />}
-            {view === "analytics" && <AnalyticsView isDark={isDark} />}
+            {view === "history" && (
+              <HistoryView
+                logs={historyQuery.data ?? []}
+                isLoading={historyQuery.isLoading}
+                isDark={isDark}
+              />
+            )}
+            {view === "analytics" && (
+              <AnalyticsView logs={historyQuery.data ?? []} isDark={isDark} />
+            )}
           </main>
         </div>
       </div>
@@ -287,12 +232,13 @@ function TodayView({
 
         {mutation.data && (
           <div
-            key={mutation.data.mood_label}
+            key={mutation.data.id}
             className="mt-6 flex items-center justify-between rounded-2xl border border-white/30 bg-white/15 px-4 py-3 text-sm animate-fade-up"
           >
             <span className="opacity-70">Forecast</span>
-            <span className="font-medium capitalize">
-              {mutation.data.weather} · {mutation.data.mood_label}
+            <span className="font-medium">
+              {SENTIMENT_EMOJI[mutation.data.sentiment]} {mutation.data.sentiment} · score{" "}
+              {mutation.data.sentiment_score.toFixed(2)}
             </span>
           </div>
         )}
@@ -301,10 +247,10 @@ function TodayView({
       <GlassCard isDark={isDark} className="p-6 sm:p-8 text-center min-h-[7rem] flex items-center justify-center">
         {mutation.data ? (
           <blockquote
-            key={mutation.data.quote}
+            key={mutation.data.id}
             className="font-serif text-lg sm:text-xl italic leading-relaxed animate-fade-up"
           >
-            &ldquo;{mutation.data.quote}&rdquo;
+            &ldquo;{mutation.data.ai_response}&rdquo;
           </blockquote>
         ) : (
           <p className="text-sm opacity-60">
@@ -316,16 +262,15 @@ function TodayView({
   );
 }
 
-const WEATHER_EMOJI: Record<MoodWeather, string> = {
-  sunny: "☀️",
-  rainy: "🌧️",
-  cloudy: "☁️",
-  stormy: "⛈️",
-  rainbow: "🌈",
-  calm: "🌿",
-};
-
-function HistoryView({ logs, isDark }: { logs: LogEntry[]; isDark: boolean }) {
+function HistoryView({
+  logs,
+  isLoading,
+  isDark,
+}: {
+  logs: MoodEntry[];
+  isLoading: boolean;
+  isDark: boolean;
+}) {
   return (
     <div className="space-y-6 animate-fade-up">
       <header>
@@ -335,22 +280,32 @@ function HistoryView({ logs, isDark }: { logs: LogEntry[]; isDark: boolean }) {
         </h2>
       </header>
       <div className="space-y-4">
+        {isLoading && (
+          <GlassCard isDark={isDark} className="p-6 text-sm opacity-70">
+            Loading your past forecasts…
+          </GlassCard>
+        )}
+        {!isLoading && logs.length === 0 && (
+          <GlassCard isDark={isDark} className="p-6 text-sm opacity-70">
+            No entries yet. Write your first mood diary on the Today tab.
+          </GlassCard>
+        )}
         {logs.map((log) => (
           <GlassCard key={log.id} isDark={isDark} className="p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{WEATHER_EMOJI[log.weather]}</span>
+                <span className="text-2xl">{SENTIMENT_EMOJI[log.sentiment]}</span>
                 <div>
-                  <p className="text-sm font-medium capitalize">
-                    {log.weather} · {log.mood_label}
+                  <p className="text-sm font-medium">
+                    {log.sentiment} · score {log.sentiment_score.toFixed(2)}
                   </p>
-                  <p className="text-xs opacity-60">{log.date}</p>
+                  <p className="text-xs opacity-60">{formatDate(log.created_at)}</p>
                 </div>
               </div>
             </div>
-            <p className="mt-4 text-sm leading-relaxed opacity-90">{log.diary}</p>
+            <p className="mt-4 text-sm leading-relaxed opacity-90">{log.mood_text}</p>
             <blockquote className="mt-4 border-l-2 border-white/40 pl-4 font-serif text-sm italic opacity-80">
-              &ldquo;{log.quote}&rdquo;
+              &ldquo;{log.ai_response}&rdquo;
             </blockquote>
           </GlassCard>
         ))}
@@ -359,11 +314,55 @@ function HistoryView({ logs, isDark }: { logs: LogEntry[]; isDark: boolean }) {
   );
 }
 
-function AnalyticsView({ isDark }: { isDark: boolean }) {
+function AnalyticsView({ logs, isDark }: { logs: MoodEntry[]; isDark: boolean }) {
   const stroke = isDark ? "rgba(255,255,255,0.9)" : "rgba(15,23,42,0.9)";
   const grid = isDark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.1)";
-  const avg =
-    TREND_DATA.reduce((s, d) => s + d.score, 0) / TREND_DATA.length;
+
+  // Build a 7-day trend from the most recent entries. Average per day; empty days = 0.
+  const trend = useMemo(() => {
+    const now = new Date();
+    const days: { day: string; score: number; count: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      days.push({
+        day: d.toLocaleDateString("en-US", { weekday: "short" }),
+        score: 0,
+        count: 0,
+      });
+    }
+    const start = new Date(now);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    for (const log of logs) {
+      const t = new Date(log.created_at);
+      const diffDays = Math.floor(
+        (t.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      if (diffDays >= 0 && diffDays < 7) {
+        days[diffDays].score += log.sentiment_score;
+        days[diffDays].count += 1;
+      }
+    }
+    return days.map((d) => ({
+      day: d.day,
+      score: d.count > 0 ? d.score / d.count : 0,
+      mood: d.count > 0 ? "" : "no entry",
+    }));
+  }, [logs]);
+
+  const scored = trend.filter((t) => t.mood !== "no entry");
+  const avg = scored.length
+    ? scored.reduce((s, d) => s + d.score, 0) / scored.length
+    : 0;
+  const brightest = scored.reduce<typeof scored[number] | null>(
+    (best, d) => (!best || d.score > best.score ? d : best),
+    null,
+  );
+  const heaviest = scored.reduce<typeof scored[number] | null>(
+    (worst, d) => (!worst || d.score < worst.score ? d : worst),
+    null,
+  );
   return (
     <div className="space-y-6 animate-fade-up">
       <header>
@@ -380,18 +379,22 @@ function AnalyticsView({ isDark }: { isDark: boolean }) {
         </GlassCard>
         <GlassCard isDark={isDark} className="p-5">
           <p className="text-xs uppercase tracking-widest opacity-60">Brightest</p>
-          <p className="mt-2 font-serif text-3xl">☀️ Sun</p>
+          <p className="mt-2 font-serif text-3xl">
+            ☀️ {brightest?.day ?? "—"}
+          </p>
         </GlassCard>
         <GlassCard isDark={isDark} className="p-5">
           <p className="text-xs uppercase tracking-widest opacity-60">Heaviest</p>
-          <p className="mt-2 font-serif text-3xl">⛈️ Thu</p>
+          <p className="mt-2 font-serif text-3xl">
+            🌧️ {heaviest?.day ?? "—"}
+          </p>
         </GlassCard>
       </div>
 
       <GlassCard isDark={isDark} className="p-5 sm:p-6">
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={TREND_DATA} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+            <LineChart data={trend} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="moodLine" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="#a78bfa" />
@@ -418,10 +421,7 @@ function AnalyticsView({ isDark }: { isDark: boolean }) {
                   backdropFilter: "blur(10px)",
                 }}
                 labelStyle={{ color: "rgba(255,255,255,0.7)" }}
-                formatter={(value: number, _n, p) => [
-                  `${value} · ${p.payload.mood}`,
-                  "Sentiment",
-                ]}
+                formatter={(value: number) => [value.toFixed(2), "Sentiment"]}
               />
               <ReferenceLine y={0} stroke={grid} />
               <Line
@@ -436,7 +436,7 @@ function AnalyticsView({ isDark }: { isDark: boolean }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-4 text-xs opacity-60">
-          Sunny = 1 · Rainbow = 0.8 · Calm = 0.5 · Cloudy = 0 · Rainy = −0.5 · Stormy = −1
+          Sunny ≈ 1 · Cloudy ≈ 0 · Rainy ≈ −0.5 · Snowy ≈ −1
         </p>
       </GlassCard>
     </div>

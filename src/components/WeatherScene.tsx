@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { MoodWeather } from "@/lib/mood.functions";
+import type { MoodWeather } from "@/lib/mood";
 
 type Props = { weather: MoodWeather | "idle" };
 
