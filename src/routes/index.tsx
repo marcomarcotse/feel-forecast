@@ -1,8 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation } from "@tanstack/react-query";
-import { observeMoodWeather, type MoodWeather } from "@/lib/mood.functions";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { observeMoodWeather, fetchMoodEntries } from "@/lib/mood.functions";
+import {
+  SENTIMENT_EMOJI,
+  sentimentToWeather,
+  type MoodEntry,
+  type MoodWeather,
+  type Sentiment,
+} from "@/lib/mood";
 import { WeatherScene } from "@/components/WeatherScene";
 import { CloudSun, History, LineChart as LineChartIcon, Sparkles } from "lucide-react";
 import {
@@ -30,103 +37,34 @@ export const Route = createFileRoute("/")({
 
 type View = "today" | "history" | "analytics";
 
-type LogEntry = {
-  id: string;
-  date: string;
-  diary: string;
-  weather: MoodWeather;
-  mood_label: string;
-  quote: string;
-};
-
-const MOCK_LOGS: LogEntry[] = [
-  {
-    id: "l1",
-    date: "May 30, 2026",
-    diary:
-      "Wrapped up the launch with the team and finally took a walk by the river. Everything felt aligned today.",
-    weather: "sunny",
-    mood_label: "Bright & Grateful",
-    quote:
-      "You showed up fully today, and the world answered back in warmth — let yourself feel it.",
-  },
-  {
-    id: "l2",
-    date: "May 29, 2026",
-    diary:
-      "Couldn't shake a heavy feeling all afternoon. Old memories surfaced and I just let them sit.",
-    weather: "rainy",
-    mood_label: "Quiet Melancholy",
-    quote:
-      "Tears are just the heart's way of making room — be tender with the version of you that's still healing.",
-  },
-  {
-    id: "l3",
-    date: "May 28, 2026",
-    diary:
-      "Unsure about the next quarter, lots of unknowns. Trying to sit with the ambiguity instead of forcing answers.",
-    weather: "cloudy",
-    mood_label: "Soft Uncertainty",
-    quote:
-      "Not every fog needs to lift before you take the next step — trust the path one quiet breath at a time.",
-  },
-  {
-    id: "l4",
-    date: "May 27, 2026",
-    diary:
-      "Long meditation this morning. Felt grounded, present, content with just being.",
-    weather: "calm",
-    mood_label: "Centered Peace",
-    quote:
-      "Stillness isn't empty — it's the quiet space where you remember who you really are.",
-  },
-];
-
-const SENTIMENT_SCORE: Record<MoodWeather, number> = {
-  sunny: 1,
-  rainbow: 0.8,
-  calm: 0.5,
-  cloudy: 0,
-  rainy: -0.5,
-  stormy: -1,
-};
-
-const TREND_DATA = [
-  { day: "Mon", score: 0.5, mood: "calm" },
-  { day: "Tue", score: 0, mood: "cloudy" },
-  { day: "Wed", score: -0.5, mood: "rainy" },
-  { day: "Thu", score: -1, mood: "stormy" },
-  { day: "Fri", score: 0, mood: "cloudy" },
-  { day: "Sat", score: 0.8, mood: "rainbow" },
-  { day: "Sun", score: 1, mood: "sunny" },
-];
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 function Index() {
   const [view, setView] = useState<View>("today");
   const [diary, setDiary] = useState("");
   const [weather, setWeather] = useState<MoodWeather | "idle">("idle");
-  const [logs, setLogs] = useState<LogEntry[]>(MOCK_LOGS);
   const observe = useServerFn(observeMoodWeather);
+  const fetchEntries = useServerFn(fetchMoodEntries);
+  const qc = useQueryClient();
+
+  const historyQuery = useQuery({
+    queryKey: ["mood-entries"],
+    queryFn: () => fetchEntries(),
+  });
 
   const mutation = useMutation({
     mutationFn: (text: string) => observe({ data: { diary: text } }),
-    onSuccess: (data) => {
-      setWeather(data.weather);
-      setLogs((prev) => [
-        {
-          id: `l-${Date.now()}`,
-          date: new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-          diary,
-          weather: data.weather,
-          mood_label: data.mood_label,
-          quote: data.quote,
-        },
-        ...prev,
-      ]);
+    onSuccess: (entry) => {
+      setWeather(sentimentToWeather(entry.sentiment));
+      qc.setQueryData<MoodEntry[]>(["mood-entries"], (prev) =>
+        prev ? [entry, ...prev] : [entry],
+      );
     },
   });
 
@@ -150,8 +88,16 @@ function Index() {
                 mutation={mutation}
               />
             )}
-            {view === "history" && <HistoryView logs={logs} isDark={isDark} />}
-            {view === "analytics" && <AnalyticsView isDark={isDark} />}
+            {view === "history" && (
+              <HistoryView
+                logs={historyQuery.data ?? []}
+                isLoading={historyQuery.isLoading}
+                isDark={isDark}
+              />
+            )}
+            {view === "analytics" && (
+              <AnalyticsView logs={historyQuery.data ?? []} isDark={isDark} />
+            )}
           </main>
         </div>
       </div>
