@@ -1,31 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-// Sentiment values stored in the DB.
-export type Sentiment = "Sunny" | "Cloudy" | "Rainy" | "Snowy";
-
-// Visual weather drives the background scene.
-export type MoodWeather = "sunny" | "rainy" | "cloudy" | "stormy" | "rainbow" | "calm";
-
-export type MoodEntry = {
-  id: string;
-  user_id: string | null;
-  mood_text: string;
-  sentiment: Sentiment;
-  sentiment_score: number;
-  ai_response: string;
-  created_at: string;
-};
-
-export function sentimentToWeather(s: Sentiment): MoodWeather {
-  switch (s) {
-    case "Sunny": return "sunny";
-    case "Cloudy": return "cloudy";
-    case "Rainy": return "rainy";
-    case "Snowy": return "calm";
-  }
-}
+import type { MoodEntry } from "./mood";
 
 const AnalysisSchema = z.object({
   sentiment: z.enum(["Sunny", "Cloudy", "Rainy", "Snowy"]),
