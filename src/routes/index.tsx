@@ -8,7 +8,6 @@ import {
   sentimentToWeather,
   type MoodEntry,
   type MoodWeather,
-  type Sentiment,
 } from "@/lib/mood";
 import { WeatherScene } from "@/components/WeatherScene";
 import { CloudSun, History, LineChart as LineChartIcon, Sparkles } from "lucide-react";
