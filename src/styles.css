@@ -97,6 +97,22 @@
   --sidebar-ring: oklch(0.704 0.04 256.788);
 }
 
+  /* Mood weather palette */
+  --mood-sunny-from: oklch(0.92 0.16 90);
+  --mood-sunny-to: oklch(0.82 0.18 55);
+  --mood-rainy-from: oklch(0.45 0.09 240);
+  --mood-rainy-to: oklch(0.28 0.07 250);
+  --mood-cloudy-from: oklch(0.78 0.02 250);
+  --mood-cloudy-to: oklch(0.6 0.03 250);
+  --mood-stormy-from: oklch(0.3 0.04 280);
+  --mood-stormy-to: oklch(0.18 0.05 290);
+  --mood-rainbow-from: oklch(0.85 0.14 340);
+  --mood-rainbow-to: oklch(0.82 0.16 200);
+  --mood-calm-from: oklch(0.88 0.08 160);
+  --mood-calm-to: oklch(0.78 0.1 200);
+  --mood-idle-from: oklch(0.97 0.02 280);
+  --mood-idle-to: oklch(0.92 0.04 230);
+
 .dark {
   --background: oklch(0.129 0.042 264.695);
   --foreground: oklch(0.984 0.003 247.858);
