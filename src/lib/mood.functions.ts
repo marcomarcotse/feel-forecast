@@ -15,14 +15,14 @@ export const observeMoodWeather = createServerFn({ method: "POST" })
     const key = process.env.OPENROUTER_API_KEY;
     if (!key) throw new Error("Missing OPENROUTER_API_KEY");
 
-    const systemPrompt = `你是一位溫暖的心情天氣分析師。請仔細閱讀使用者的日記，並僅以 JSON 回應（不要包含任何 markdown 或多餘文字）。
-JSON 結構：
+    const systemPrompt = `You are a warm mood-weather analyst. Carefully read the user's diary entry and respond ONLY with JSON (no markdown, no extra text).
+JSON shape:
 {
   "sentiment": "Sunny" | "Cloudy" | "Rainy" | "Snowy",
-  "sentiment_score": -1 到 1 之間的數字（Sunny ≈ 1、Cloudy ≈ 0、Rainy ≈ -0.5、Snowy ≈ -1）,
-  "ai_response": "一段以繁體中文寫成、溫暖且鼓勵人心的回覆，30~80 字，使用第二人稱、語氣柔和。"
+  "sentiment_score": a number between -1 and 1 (Sunny ≈ 1, Cloudy ≈ 0, Rainy ≈ -0.5, Snowy ≈ -1),
+  "ai_response": "A warm, encouraging reply written in English, 30-80 words, second person, gentle and comforting tone."
 }
-對應規則：開心/感恩 → Sunny；不安/迷惘 → Cloudy；悲傷/失落 → Rainy；孤獨/冰冷/麻木 → Snowy。`;
+Mapping rules: happy/grateful → Sunny; uneasy/uncertain → Cloudy; sad/down → Rainy; lonely/cold/numb → Snowy.`;
 
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
